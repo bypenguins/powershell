@@ -1,0 +1,410 @@
+#PowerShell environment and provisioning - enable
+Set-ExecutionPolicy Unrestricted
+Get-ExecutionPolicy
+
+#disable terminal server login during maintenance
+Change Logon /Disable
+#enable terminal server login
+Change Logon /Enable
+
+#aliases for admin account, paste the 5 lines below and editalias and paste them into the notepad and save
+set-alias -name ssh -value New-SSHSession
+function IT { cd C:\IT\JOBS }
+function editalias { notepad $((Split-Path $profile -Parent) + "\profile.ps1") }
+set-alias shortcut `it`
+set-alias shortcut `editalias`
+
+Function prompt
+ {   
+	$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+	$principal = [Security.Principal.WindowsPrincipal] $identity
+	$adminRole = [Security.Principal.WindowsBuiltInRole]::Administrator
+	if($principal.IsInRole($adminRole)) { $ROLE="ADMIN@" }
+	$currentDirectory = Get-Location
+	"PS $($ROLE)[$env:COMPUTERNAME]$($currentDirectory)>"
+	"$($executionContext.SessionState.Path.CurrentLocation)$('>' * ($nestedPromptLevel + 1))"
+ }
+
+
+#module path
+Program Files\WindowsPowerShell\Modules\
+
+# reboot /t seconds 43200 seconds = 12 hours
+shutdown /r /f /t 43200 /d p:0:0 /c "Scheduled Server Restart" 
+
+Restart-Computer -Force
+
+#PowerShell - get installed software 
+Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Format-Table –AutoSize 
+wmic product get name,version
+wmic /output:AppList.txt product get name,version
+
+#see ROIScan.vbs for office version identification
+
+#PowerShell - get Network Printer hostaddress
+gwmi win32_printer -ComputerName $env:computername | %{ $printer = $_.Name; $port = $_.portname; gwmi win32_tcpipprinterport -computername $env:computername | where { $_.Name -eq $port } | select @{name="printername";expression={$printer}}, hostaddress }
+
+#PowerShell - remove error jobs
+Get-Printer | Get-PrintJob | Where-Object JobStatus -like '*error*' | Remove-PrintJob
+
+#Powershell Print to PDF
+
+Disable-WindowsOptionalFeature -online -FeatureName Printing-PrintToPDFServices-Features -All
+Enable-WindowsOptionalFeature -online -FeatureName Printing-PrintToPDFServices-Features -All
+
+#DISM Print to PDF
+dism /Online /Disable-Feature /FeatureName:"Printing-PrintToPDFServices-Features" /NoRestart
+dism /Online /Enable-Feature /FeatureName:"Printing-PrintToPDFServices-Features" /NoRestart
+
+#Windows event logs to csv conversion
+User MS LogParser from technet online https://www.microsoft.com/en-us/download/details.aspx?id=24659
+LogParser.exe -i:EVT "SELECT * INTO c:\richard\secfail.csv FROM 'c:\Richard\security failed events.evtx'"
+
+#windows temp files
+C:\WINDOWS\system32> .\cleanmgr.exe /sageset:1
+check all items
+open taskscheduler
+import cleantmps.xml job (run cleanmgr.exe /sagerun:1 on sundays at 7am)
+check account and run
+
+#check hibernate and disable
+powercfg /a
+powercfg /h off
+
+#disk drive health check
+wmic diskdrive get status
+
+# local user account
+Set-LocalUser -Name Peter -PasswordNeverExpires $true -Description Brother
+
+#disk free space
+gwmi win32_logicaldisk | Format-Table DeviceId, MediaType, @{n="Size";e={[math]::Round($_.Size/1GB,2)}},@{n="FreeSpace";e={[math]::Round($_.FreeSpace/1GB,2)}}
+
+#check c:\system volume information\ for hidden snapshots and remove them with:
+vssadmin list shadowstorage
+vssadmin resize shadowstorage /on=c: /for=c: /maxsize=10%
+Diskshadow
+Delete shadows OLDEST c:\
+
+or
+vssadmin delete shadows /all /Quiet
+
+#PowerShell - compare differences between two computers
+Compare-Object -ReferenceObject (Get-Content C:\Users\keycom\Documents\box1.txt) -DifferenceObject (Get-Content C:\Users\keycom\Documents\box2.txt)
+
+wmic - get printer and port info
+wmic printer get name, drivername, portname >printers.txt
+
+wmic get vendor info
+wmic csproduct get vendor, version
+wmic bios get serialnumber
+wmic bios get description
+wmic os get Caption, Version, BuildNumber, OSArchitecture
+
+#PowerShell enable WSL
+Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
+
+dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+
+See https://docs.microsoft.com/en-us/windows/wsl/install-win10
+
+#Powershell - download url
+Invoke-WebRequest -Uri https://aka.ms/wsl-ubuntu-1804 -OutFile Ubuntu.appx -UseBasicParsing
+
+#Powershell find matching processes
+get-process -Name 'Deep*'
+get-process -Name 'Deep*' | Stop-process
+
+#Powershell - install appx
+Add-AppxPackage .\app_name.appx
+
+#Powershell - list plugged in USB
+gwmi Win32_USBControllerDevice |%{[wmi]($_.Dependent)} | Sort Manufacturer,Description,DeviceID | Ft -GroupBy Manufacturer Description,Service,DeviceID
+
+#Find uptime (last reboot)
+systeminfo | find "System Boot Time"
+
+#Powershell - 3 essential net tests
+Test-Connection -ComputerName google.com
+Test-NetConnection -ComputerName 52.187.236.227 -Port 3389
+Test-NetConnection -ComputerName google.com -TraceRoute
+
+#simple ping test
+Test-NetConnection
+
+#firewall allow ping
+netsh advfirewall firewall add rule name="ICMP Allow incoming V4 echo request" protocol=icmpv4:8,any dir=in action=allow
+#firewall status
+Get-NetFirewallProfile | select-object Name, Enabled
+#fireall disable
+Set-NetFirewallProfile -All -Enabled False
+
+
+#my public IP
+powershell Invoke-RestMethod http://ipinfo.io/json
+
+#Powershell get workgroup
+(Get-WmiObject Win32_ComputerSystem).domain
+
+#Fix unable to browse network due to public profile location
+get-netconnectionprofile
+set-netconnectionprofile -name network -networkcategory private
+or 
+Get-NetConnectionProfile -NetworkCategory "Public" | Set-NetConnectionProfile -NetworkCategory "Private"
+
+Powershell get computer system
+Get-CimInstance -ClassName Win32_ComputerSystem
+
+net user <username> /add 
+net localgroup <groupname> <username> /addgroup
+net user <username> <new password>
+
+#Powershell list local accounts
+Get-CimInstance -ClassName Win32_Desktop | select-object Name
+
+#set no expiry
+lusrmgr.msc - set expiry
+
+WMIC USERACCOUNT WHERE "Name='ladmin'" SET PasswordExpires=FALSE
+net accounts /maxpwage:unlimited
+
+Check dns records for MX setup
+nslookup -q=TXT keycom.net.au
+
+# dhcp server management / query
+Add-WindowsFeature -Name DHCP –IncludeManagementTools
+Get-DhcpServerInDC
+Get-DhcpServerSetting -ComputerName <MyDHCP>
+
+# usb devices
+get-PnPdevice -class keyboard | select-object Friendlyname, status, deviceid, manufacturer
+
+
+#azure ps upgrade msi
+https://github.com/Azure/azure-powershell/releases/download/v4.2.0-June2020/Az-Cmdlets-4.2.0.32962-x64.msi
+
+#SQL module setup
+    Run from PS console: Invoke-WebRequest -Uri powershellgallery.com/api/v2/package/sqlserver -Out D:\temp\sqlserver.zip
+    Extract and save to Program Files\WindowsPowerShell\Modules\sqlserver
+    Check if Powershell is able to see it: Get-Module -ListAvailable
+    Import SqlServer module Import-Module SqlServer
+
+#SqlServer
+hostname |
+ForEach-Object {
+Get-ChildItem -Path "SQLSERVER:\SQL\$_"} | Select-Object -Property ComputerNamePhysicalNetBIOS, Name, DisplayName, InstanceName |
+%{
+If (($_.DisplayName -eq 'Default') -or ($_.DisplayName -eq 'MSSQLSERVER')) {
+                       $SQL = $_.name
+                    }
+                    elseif ($_.InstanceName -ne $NULL)
+                    {
+               #$SQLInstance = "$($_.ComputerNamePhysicalNetBIOS)\$($_.InstanceName)"
+                         $SQL = $_.name
+                    }
+New-Object ('Microsoft.SqlServer.Management.Smo.Server') $SQL |
+SELECT @{label='ServerName';expression={$_.ComputerNamePhysicalNetBIOS}}, @{label='InstanceName';expression={$_.Name}} ,
+Edition,ErrorLogPath,MasterDBLogPath,MasterDBPath,NetName,BackupDirectory,DefaultFile,DefaultLog} 
+
+ssh -L 8000:192.168.1.10:5000 richard@ozone.sly.io -p 8022
+
+#install ssh on windows server (windows 10 has it built in)
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+find-module posh-ssh
+install-module posh-ssh
+New-SSHSession -ComputerName "somehost.net" -Credential (Get-Credential)
+
+#Add ping to Windows computer
+netsh advfirewall firewall add rule name="ICMP Allow incoming -4 echo" protocol="icmpv4:8,any" dir=in action=allow
+
+#install telnet client
+install-windowsfeature -name Telnet-Client
+
+#Terminal Server
+gpedit.msc
+Computer Configuration> |<User Configuration>\Administrative Templates\Windows Components\Remote Desktop Services\Remote Desktop Session Host\Connections\Set rules 
+
+query session /server:<server>
+mstsc.exe /v:<server> /shadow:<ID> /control /noConsentPrompt 
+
+#Powershell check windows firewall state
+invoke-command -scriptblock {
+    try{ get-netfirewallprofile | select name,enabled }
+    catch{ netsh advfirewall show all state }
+}
+#Powershell disable windows firewall
+Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled False
+
+#Powershell disable UAC on reboot
+Set-ItemProperty -Path REGISTRY::HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System -Name ConsentPromptBehaviorAdmin -Value 0
+
+
+
+#Powershell Remoting to a Non-Domain Host
+
+    From an admin shell, enable PS remoting on the machine you wish to access:
+
+New-ItemProperty -Name LocalAccountTokenFilterPolicy `
+  -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System `
+  -PropertyType DWord -Value 1
+
+Enable-PsRemoting -Force
+
+    From an admin shell, configure your client system to allow remote connections to non-domain machines
+
+Set-Item WSMan:\localhost\Client\TrustedHosts -Value "*" -Force
+
+    Connect to the remote machine using the exact login credentials. For example, a local user would provide SERVER\username and password.
+
+$SERVER = 'REMOTE_SERVER'
+$USER   = 'REMOTE_USER'
+Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\PowerShell\1\ShellIds' ConsolePrompting $true
+Invoke-Command -Computer $SERVER -Credential (get-credential "$SERVER\$USER") { ls C:\ }
+
+#Powershell interactive input
+$Ans = Read-Host -Prompt 'What is your favourite colour?'
+write-host -foregroundcolor $Ans 'your favourite colour is '$($Ans)
+
+#Powershell CPU info
+$CPUinfo = Get-CimInstance -Class CIM_Processor -ErrorAction Stop | Select-Object Name, Caption, LoadPercentage, AddressWidth, MaxClockSpeed
+
+#Enum software (from registry)
+
+
+wmic /output:.\InstalledSoftwareList.txt product get name,version
+
+#network tcp port scan
+Import-Module PSnmap
+psnmap -computername 52.114.77.34 -port 443,3478,3479,3480,3481 -scanonpingfail -verbose
+
+#Powershell loop with commandline params as example
+
+for ( $i = 0; $i -lt $args.count; $i++ ) {
+    write-host "Argument  $i is $($args[$i])"
+} 
+
+#Powershell check for empty string, object or whitespace " "
+if ([string]::IsNullOrWhiteSpace($variable)) { 
+	$variable = "not blank" }
+
+#Powershell install with args
+Start-Process -FilePath $TempInstall -Args '/DesktopShortcut=false' -Wait
+
+#powershell find proc and kill
+
+Get-Process vlc | Stop-Process
+get-process | where-object { $_.ProcessName -like "Calc*" } | Stop-Process
+
+#powershell interactive remote session
+Enter-PSSession Server01
+Exit-PSSession
+
+#powershell run remote script
+Invoke-Command -ComputerName Server01, Server02 -FilePath c:\Scripts\DiskCollect.ps1
+
+#powershell persistent remote session
+$s = New-PSSession -ComputerName Server01, Server02
+
+# powershell console beep, clear
+[system.console]::clear()
+[console]::beep(1000, 500)
+0..15 | foreach-object { [console]::ForegroundColor = $_ ; “console color $_” ; sleep 1 }
+
+# Log Off Another User from the Command Prompt
+  
+  query session 
+    Note the ID column value for the user you want to sign off.
+    logoff <ID>
+	
+# Group policy force 30 min disconnect limit
+Local Computer Policy / Computer Configuration / Administrative Templates / Windows Components / Remote Desktop Services / Remote Desktop Session Host / Session Time Limits
+
+# Azure backup agent
+net stop obengine
+
+# rebuild performance counters
+To rebuild the perfmon counters, please follow the below steps:
+
+    Open a command prompt as an administrator and execute the below commands one by one:
+    cd c:\Windows\System32
+    lodctr /R
+    cd c:\Windows\SysWOW64
+    lodctr /R
+    Execute the below commands to stop and start the Performance Logs and Alerts service:
+    net stop pla && net start pla
+
+# Cryptographic service and tries to read the Mslldp.sys information from a Microsoft Link-Layer Discovery Protocol driver, the "access denied fix
+
+0. Open cmd 
+1. sc sdshow mslldp
+2. Copy the output string from step 1, append it with (A;;CCLCSWLOCRRC;;;SU)
+4. sc sdset mslldp <string from step 2>
+
+# windows backup
+wbAdmin start backup -backupTarget:F: -include:C:,E: -allCritical -quiet
+Boot into windows recovery and choose system restore
+
+# enable telnet
+dism /online /Enable-Feature /FeatureName:TelnetClient
+enable-windowsoptionalfeature -FeatureName 'TelnetClient' -Online
+
+# enable FTP server
+DISM /Online /Enable-Feature /FeatureName:IIS-WebServerRole /FeatureName:IIS-FTPServer /FeatureName:IIS-FTPSvc
+DISM /Online /Disable-Feature /FeatureName:IIS-WebServer
+
+# restore windows 10 health
+DISM.exe /Online /Cleanup-image /Restorehealth
+diskpart - list volume
+sfc /scannow /offbootdir=c:\ /offwindir=C:\Windows
+
+If sfc failing - check windows services running e.g. trustedinstaller:
+sc config trustedinstaller start = auto
+dism /Online /Cleanup-Image /StartComponentCleanup
+sfc /scannow
+dism /Online /Cleanup-Image /RestoreHealth
+sfc /scannow
+
+# powershell speech api
+
+Add-Type -AssemblyName System.speech
+$speak = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$speak.speak('Hello world.')
+
+# string things
+(82,73,67,72,65,82,68|%{[char]$_})-join''
+
+#robocopy user profile backup
+
+$tempfolders = @("C:\Users\*\Appdata\Local\Temp\*", "C:\Windows\Temp\*", "C:\Windows\Prefetch\*")
+Remove-Item $tempfolders -force -Recurse -ErrorAction SilentlyContinue -verbose 
+
+robocopy c:\users\hsc \\mainsvr\Public\backup\Theatre1 /s /mt /r:0 /v /w:0 /zb /xjd /xf ntuser.* *.tmp UsrClass.dat* *.jar *.$$$ *.par *.cdx *.VSP ~*.xlsx ~*.docx /XD "c:\users\staff\AppData\Local\Temporary Internet Files" /log:backup.log
+
+#delete long paths and too long filenames
+mkdir empty_dir
+robocopy empty_dir the_dir_to_delete /mir
+rmdir empty_dir
+rmdir the_dir_to_delete
+
+#software report
+RecoverKeysCmd.exe -scanlocal -ShowInstalledSoftware -txt -fileaspcname
+
+#uninstall with powershell
+
+Get-WmiObject -Class Win32_Product | Select-Object -Property Name
+
+$MyApp = Get-WmiObject -Class Win32_Product | Where-Object{$_.Name -eq "Logmein Client"}
+$MyApp.Uninstall()
+
+#list wifi saved
+netsh wlan show profile
+#get clear text password
+netsh wlan show profile <SSID> key=clear
+#Oneliner to extract all wifi passwords
+cls & echo. & for /f "tokens=4 delims=: " %a in ('netsh wlan show profiles ^| find "Profile "') do @echo off > nul & (netsh wlan show profiles name=%a key=clear | findstr "SSID Cipher Content" | find /v "Number" & echo.) & @echo on
+
+# Exchange 2016-2019
+Add-PSSnapin Microsoft.Exchange.Management.PowerShell.SnapIn
+Get-Mailbox
+Get-Messagetrackinglog -sender juliette@drjosephisaacs.com.au | fl >C:\Temp\delivery-report.txt
