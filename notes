@@ -7,13 +7,6 @@ Change Logon /Disable
 #enable terminal server login
 Change Logon /Enable
 
-#aliases for admin account, paste the 5 lines below and editalias and paste them into the notepad and save
-set-alias -name ssh -value New-SSHSession
-function IT { cd C:\IT\JOBS }
-function editalias { notepad $((Split-Path $profile -Parent) + "\profile.ps1") }
-set-alias shortcut `it`
-set-alias shortcut `editalias`
-
 Function prompt
  {   
 	$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
